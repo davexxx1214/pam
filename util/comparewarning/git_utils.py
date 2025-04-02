@@ -73,6 +73,95 @@ def find_git_repo_root():
         print(f"Warning: Error while trying to find Git repository root: {e}", file=sys.stderr)
         return None
 
+def get_blame_map_for_file(filepath, repo_root=None):
+    """
+    Preload git blame info for all lines in a file and return a map:
+    line number -> (author, email, commit_hash)
+    """
+    global git_blame_not_found
+    blame_map = {}
+
+    if filepath == "N/A" or git_blame_not_found:
+        return blame_map
+
+    exec_cwd = repo_root
+    path_for_git = filepath
+    using_relative_path = False
+
+    if repo_root and os.path.isabs(filepath):
+        try:
+            norm_repo_root = os.path.normcase(os.path.realpath(repo_root))
+            norm_filepath = os.path.normcase(os.path.realpath(filepath))
+        except OSError:
+            norm_repo_root = os.path.normcase(os.path.normpath(repo_root))
+            norm_filepath = os.path.normcase(os.path.normpath(filepath))
+
+        if norm_filepath.startswith(norm_repo_root + os.sep) or norm_filepath == norm_repo_root:
+            try:
+                relative_path = os.path.relpath(filepath, repo_root)
+                if os.name == "nt":
+                    relative_path = get_actual_case_path(repo_root, relative_path)
+                path_for_git = relative_path.replace(os.sep, '/')
+                using_relative_path = True
+            except ValueError:
+                path_for_git = filepath
+    elif not os.path.isabs(filepath):
+        path_for_git = filepath.replace(os.sep, '/')
+
+    blame_command = [
+        "git", "blame",
+        "--porcelain",
+        "--", path_for_git
+    ]
+
+    try:
+        blame_result = subprocess.run(
+            blame_command,
+            cwd=exec_cwd,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+
+        if blame_result.returncode != 0:
+            return blame_map
+
+        lines = blame_result.stdout.splitlines()
+        current_line = 0
+        commit_hash = "N/A"
+        author = "N/A"
+        email = "N/A"
+
+        for line in lines:
+            if re.match(r'^[0-9a-f]{40} ', line):
+                parts = line.split()
+                if len(parts) >= 3:
+                    commit_hash = parts[0]
+                    try:
+                        current_line = int(parts[2])
+                    except ValueError:
+                        current_line = 0
+                author = "N/A"
+                email = "N/A"
+            elif line.startswith("author "):
+                author = line.split(" ", 1)[1]
+            elif line.startswith("author-mail "):
+                email = line.split(" ", 1)[1].strip('<>')
+            elif line.startswith("\t"):
+                if current_line > 0:
+                    blame_map[current_line] = (author, email, commit_hash)
+                current_line += 1
+
+    except FileNotFoundError:
+        git_blame_not_found = True
+    except Exception:
+        pass
+
+    return blame_map
+
 def get_git_blame_info(filepath, line_no, repo_root=None):
     """
     Use git blame to get the author, email, and commit hash information

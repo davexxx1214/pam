@@ -126,6 +126,9 @@ def main():
                     pass
                 else:
                     processed_count = 0
+                    # Preload blame map for this file
+                    blame_map = git_utils.get_blame_map_for_file(new_file, repo_root)
+
                     # Iterate through the identified new/increased warnings
                     for key, text, extra in added_warnings:
                         filepath, line_no, column, warning_code = key
@@ -135,14 +138,14 @@ def main():
 
                         author = "N/A"
                         email = "N/A"
-                        commit_hash = "N/A" # Initialize commit_hash
-                        # Only run git blame if filepath/line_no are valid AND git command is available
-                        # Access the global flag from the git_utils module
-                        if filepath != "N/A" and line_no != "N/A" and not git_utils.git_blame_not_found:
-                            # Call the function from the git_utils module
-                            # Pass the determined repo_root (which might be None if not found)
-                            # Unpack all three return values
-                            author, email, commit_hash = git_utils.get_git_blame_info(filepath, line_no, repo_root)
+                        commit_hash = "N/A"
+                        if filepath != "N/A" and line_no != "N/A":
+                            try:
+                                line_int = int(line_no)
+                                if line_int in blame_map:
+                                    author, email, commit_hash = blame_map[line_int]
+                            except Exception:
+                                pass
                         # else: Git not found or N/A path/line, author/email/commit remain "N/A"
 
                         # Prepare the commit information for display (either hash or full URL)
