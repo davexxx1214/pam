@@ -126,12 +126,16 @@ def main():
                     pass
                 else:
                     processed_count = 0
-                    # Preload blame map for this file
-                    blame_map = git_utils.get_blame_map_for_file(new_file, repo_root)
-
+                    # 创建一个缓存字典，用于存储文件的blame信息
+                    blame_cache = {}
+                    
                     # Iterate through the identified new/increased warnings
                     for key, text, extra in added_warnings:
                         filepath, line_no, column, warning_code = key
+                        # 从缓存中获取blame map，如果不存在则加载并缓存
+                        if filepath != "N/A" and filepath not in blame_cache:
+                            blame_cache[filepath] = git_utils.get_blame_map_for_file(filepath, repo_root)
+                        
                         # Call functions from warning_parser module
                         project = warning_parser.extract_project_path(text)
                         compiling_source = warning_parser.extract_compiling_source(text)
@@ -142,6 +146,7 @@ def main():
                         if filepath != "N/A" and line_no != "N/A":
                             try:
                                 line_int = int(line_no)
+                                blame_map = blame_cache.get(filepath, {})
                                 if line_int in blame_map:
                                     author, email, commit_hash = blame_map[line_int]
                             except Exception:
