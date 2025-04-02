@@ -1,7 +1,7 @@
 import subprocess
 import sys
 import re
-import os 
+import os
 
 # Initialize a flag to prevent repeated 'git not found' warnings
 git_blame_not_found = False
@@ -44,28 +44,36 @@ def find_git_repo_root():
 
 def get_git_blame_info(filepath, line_no, repo_root=None):
     """
-    Use git blame to get the author and email information for a specific file and line number.
+    Use git blame to get the author, email, and commit hash information
+    for a specific file and line number.
     Relies on setting the correct 'cwd' (repo_root) for git blame to handle paths,
     and attempts to use relative paths within the repo for better cross-platform/case handling.
+
+    Returns:
+        tuple: (author, email, commit_hash) or ("N/A", "N/A", "N/A") on failure.
     """
     global git_blame_not_found # Access the global flag
 
     # Check if filepath and line number are valid
     if filepath == "N/A" or line_no == "N/A":
-        return "N/A", "N/A"
+        # Return N/A for all three fields
+        return "N/A", "N/A", "N/A"
 
     # If Git command was globally determined as not found, exit early.
     if git_blame_not_found:
-        return "N/A", "N/A"
+        # Return N/A for all three fields
+        return "N/A", "N/A", "N/A"
 
     # Use repo_root as the execution directory if found
     exec_cwd = repo_root
+    commit_hash = "N/A" # Initialize commit_hash
 
     try:
         # Ensure line number is an integer
         line_num = int(line_no)
         if line_num <= 0:
-            return "N/A", "N/A"
+            # Return N/A for all three fields
+            return "N/A", "N/A", "N/A"
 
         # --- Prepare the path for git blame ---
         # Default: use the original path passed in. Git might handle absolute paths
@@ -149,26 +157,31 @@ def get_git_blame_info(filepath, line_no, repo_root=None):
         if blame_result.returncode != 0:
             # Include more context in the warning message
             print(f"Warning: git blame failed for line {line_no}. {cwd_info_on_fail}, {path_info_on_fail}. Error: {blame_result.stderr.strip()}", file=sys.stderr)
-            return "N/A", "N/A"
+            # Return N/A for all three fields
+            return "N/A", "N/A", "N/A"
 
         # --- Parse the blame output (robust parsing) ---
         author = "N/A"
         email = "N/A"
+        # commit_hash already initialized to "N/A"
         lines = blame_result.stdout.splitlines()
 
         if not lines:
              cwd_info = f"CWD='{exec_cwd}'" if exec_cwd else "CWD=Default (None)"
              print(f"Warning: git blame produced no output for '{filepath}' at line {line_no}. {cwd_info}.", file=sys.stderr)
-             return "N/A", "N/A"
+             # Return N/A for all three fields
+             return "N/A", "N/A", "N/A"
 
         # Check if the first line looks like blame info (commit hash etc.)
         first_line_parts = lines[0].split()
         if len(first_line_parts) < 3 or not re.match(r'^[0-9a-f]{40}', first_line_parts[0]):
              cwd_info = f"CWD='{exec_cwd}'" if exec_cwd else "CWD=Default (None)"
              print(f"Warning: Unexpected git blame output format (first line) for '{filepath}' at line {line_no}. {cwd_info}. Output: {lines[0]}", file=sys.stderr)
-             return "N/A", "N/A"
+             # Return N/A for all three fields
+             return "N/A", "N/A", "N/A"
 
-        commit_hash = first_line_parts[0]
+        # Successfully extracted commit hash from the first line
+        commit_hash = first_line_parts[0] # Assign the found hash
 
         # Find the author and email associated with this commit hash in the header
         found_author = False
@@ -193,11 +206,12 @@ def get_git_blame_info(filepath, line_no, repo_root=None):
                  if found_author and found_email:
                      break
 
-        # Fallback if parsing didn't find author/email
+        # Fallback if parsing didn't find author/email (commit_hash might still be valid)
         if not found_author: author = "N/A"
         if not found_email: email = "N/A"
 
-        return author, email
+        # Return all three pieces of information
+        return author, email, commit_hash
 
     except FileNotFoundError:
         # Handle case where 'git' command is not found specifically during blame execution
@@ -205,12 +219,15 @@ def get_git_blame_info(filepath, line_no, repo_root=None):
         if not git_blame_not_found: # Print only once globally
              print(f"Warning: 'git' command not found during blame execution. Please ensure Git is installed and in your PATH.", file=sys.stderr)
              git_blame_not_found = True # Set global flag
-        return "N/A", "N/A"
+        # Return N/A for all three fields
+        return "N/A", "N/A", "N/A"
     except ValueError:
         # Handle case where line_no is not a valid integer
         print(f"Warning: Invalid line number '{line_no}' for git blame.", file=sys.stderr)
-        return "N/A", "N/A"
+        # Return N/A for all three fields
+        return "N/A", "N/A", "N/A"
     except Exception as e:
         # Catch any other exceptions during git blame execution
         print(f"Warning: An error occurred during git blame for {filepath} at line {line_no}: {e}", file=sys.stderr)
-        return "N/A", "N/A"
+        # Return N/A for all three fields
+        return "N/A", "N/A", "N/A"

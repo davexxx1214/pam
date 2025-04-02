@@ -9,18 +9,14 @@ import git_utils
 import warning_parser
 import comparison
 
-# Removed function definitions: find_git_repo_root, extract_project_path, has_project_path,
-# has_compiling_source, extract_compiling_source, get_git_blame_info, parse_warnings,
-# compare_warnings as they are moved to separate files.
-
-# Removed the global git_blame_not_found initialization here, it's in git_utils.py
+COMMIT_URL_PREFIX = "https://github.com/davexxx1214/pam/commit/"
 
 def main():
     """
     Main function to compare warnings between two folders.
     Expects two command-line arguments: <old_folder> and <new_folder>.
     Reads log filenames from the configuration file "compare.config".
-    Writes the comparison results to output CSV files, including author info from git blame.
+    Writes the comparison results to output CSV files, including author info and commit hash from git blame.
     Attempts to run git blame within the detected repository root.
     """
     if len(sys.argv) < 3:
@@ -122,8 +118,8 @@ def main():
         try:
             with open(output_filepath, "w", newline="", encoding="utf-8") as csvfile:
                 writer = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
-                # New header order including Author and E-Mail
-                writer.writerow(["Author", "E-Mail", "Warning keyword", "Message", "Project", "Compiling Source", "File path", "Line", "Column", "Repeat Count"])
+                # Header remains the same conceptually, but the content will be a URL if prefix is set
+                writer.writerow(["Author", "E-Mail", "Commit URL", "Warning keyword", "Message", "Project", "Compiling Source", "File path", "Line", "Column", "Repeat Count"]) # Updated header slightly
 
                 if not added_warnings:
                     # Write only header if no new warnings
@@ -139,17 +135,23 @@ def main():
 
                         author = "N/A"
                         email = "N/A"
+                        commit_hash = "N/A" # Initialize commit_hash
                         # Only run git blame if filepath/line_no are valid AND git command is available
                         # Access the global flag from the git_utils module
                         if filepath != "N/A" and line_no != "N/A" and not git_utils.git_blame_not_found:
                             # Call the function from the git_utils module
                             # Pass the determined repo_root (which might be None if not found)
-                            author, email = git_utils.get_git_blame_info(filepath, line_no, repo_root)
-                        # else: Git not found or N/A path/line, author/email remain "N/A"
+                            # Unpack all three return values
+                            author, email, commit_hash = git_utils.get_git_blame_info(filepath, line_no, repo_root)
+                        # else: Git not found or N/A path/line, author/email/commit remain "N/A"
 
+                        # Prepare the commit information for display (either hash or full URL)
+                        commit_display_info = commit_hash # Default to hash or "N/A"
+                        if COMMIT_URL_PREFIX and commit_hash != "N/A":
+                            commit_display_info = COMMIT_URL_PREFIX + commit_hash
 
-                        # Write the row including author and email information
-                        writer.writerow([author, email, warning_code, text, project, compiling_source, filepath, line_no, column, extra])
+                        # Write the row including author, email, and the commit display info
+                        writer.writerow([author, email, commit_display_info, warning_code, text, project, compiling_source, filepath, line_no, column, extra])
                         processed_count += 1
                         # Optional: Add progress indicator?
                         if processed_count % 50 == 0:
