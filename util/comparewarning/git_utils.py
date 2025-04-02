@@ -2,6 +2,7 @@ import subprocess
 import sys
 import re
 import os
+import configparser
 
 # Initialize a flag to prevent repeated 'git not found' warnings
 git_blame_not_found = False
@@ -9,6 +10,23 @@ git_blame_not_found = False
 # Global cache to store blame information for files
 # Key: file path, Value: blame map
 global_blame_cache = {}
+
+# Read configuration file
+def read_config():
+    config = configparser.ConfigParser()
+    try:
+        # Use absolute path to read config file
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'common.config')
+        config.read(config_path)
+        debug_enabled = config.getboolean('DEFAULT', 'enableDebug', fallback=False)
+        return {'enableDebug': debug_enabled}
+    except Exception as e:
+        print(f"Warning: Error reading common.config: {e}", file=sys.stderr)
+        return {'enableDebug': False}
+
+# Get debug mode status
+def is_debug_enabled():
+    return read_config()['enableDebug']
 
 def get_actual_case_path(repo_root, rel_path):
     """
@@ -86,7 +104,8 @@ def get_blame_map_for_file(filepath, repo_root=None):
     
     # Check if the file's blame map is already in the global cache
     if filepath in global_blame_cache:
-        print(f"Cache hit: Getting blame info for file '{filepath}' from global cache")
+        if is_debug_enabled():
+            print(f"Cache hit: Getting blame info for file '{filepath}' from global cache")
         return global_blame_cache[filepath]
     
     blame_map = {}
@@ -221,7 +240,8 @@ def get_blame_map_for_file(filepath, repo_root=None):
     
     # Store the blame map in the global cache
     global_blame_cache[filepath] = blame_map
-    print(f"Cache created: Added blame info for file '{filepath}' to global cache, containing {len(blame_map)} lines")
+    if is_debug_enabled():
+        print(f"Cache created: Added blame info for file '{filepath}' to global cache, containing {len(blame_map)} lines")
     return blame_map
 
 def get_git_blame_info(filepath, line_no, repo_root=None):

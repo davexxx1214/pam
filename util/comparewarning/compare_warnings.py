@@ -2,6 +2,7 @@ import csv
 import sys
 import os
 import datetime
+import configparser
 # Removed subprocess, re imports as they are now in other modules
 
 # Import the new utility modules
@@ -9,7 +10,20 @@ import git_utils
 import warning_parser
 import comparison
 
-COMMIT_URL_PREFIX = "https://github.com/davexxx1214/pam/commit/"
+def read_config():
+    config = configparser.ConfigParser()
+    try:
+        # Use absolute path to read config file
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'common.config')
+        config.read(config_path)
+        commit_url_prefix = config.get('DEFAULT', 'COMMIT_URL_PREFIX', fallback="")
+        # Remove quotes if present
+        if commit_url_prefix.startswith('"') and commit_url_prefix.endswith('"'):
+            commit_url_prefix = commit_url_prefix[1:-1]
+        return {'COMMIT_URL_PREFIX': commit_url_prefix}
+    except Exception as e:
+        print(f"Warning: Error reading common.config: {e}", file=sys.stderr)
+        return {'COMMIT_URL_PREFIX': ""}
 
 def main():
     """
@@ -135,9 +149,10 @@ def main():
                         filepath, line_no, column, warning_code = key
                         # Get blame map from cache, if not exists then load and cache it
                         if filepath != "N/A" and filepath not in blame_cache:
-                            print(f"Local cache miss: File '{filepath}' not in local cache, calling git_utils to get blame info")
+                            if git_utils.is_debug_enabled():
+                                print(f"Local cache miss: File '{filepath}' not in local cache, calling git_utils to get blame info")
                             blame_cache[filepath] = git_utils.get_blame_map_for_file(filepath, repo_root)
-                        elif filepath != "N/A":
+                        elif filepath != "N/A" and git_utils.is_debug_enabled():
                             print(f"Local cache hit: Getting blame info for file '{filepath}' from local cache")
                         
                         # Call functions from warning_parser module
@@ -157,20 +172,29 @@ def main():
                                 pass
                         # else: Git not found or N/A path/line, author/email/commit remain "N/A"
 
+                        # Get COMMIT_URL_PREFIX from config
+                        commit_url_prefix = read_config()['COMMIT_URL_PREFIX']
+                        
                         # Prepare the commit information for display (either hash or full URL)
                         commit_display_info = commit_hash # Default to hash or "N/A"
-                        if COMMIT_URL_PREFIX and commit_hash != "N/A":
-                            commit_display_info = COMMIT_URL_PREFIX + commit_hash
+                        if commit_url_prefix and commit_hash != "N/A":
+                            commit_display_info = commit_url_prefix + commit_hash
 
                         # Write the row including author, email, and the commit display info
                         writer.writerow([author, email, commit_display_info, warning_code, text, project, compiling_source, filepath, line_no, column, extra])
                         processed_count += 1
-                        # Optional: Add progress indicator?
-                        if processed_count % 50 == 0:
-                           print(f"  Processed {processed_count} new warning types for git blame...")
+                        
+                        # Display progress bar
+                        if processed_count % 10 == 0:
+                            total = len(added_warnings)
+                            percent = int(processed_count / total * 100)
+                            bar_length = 30
+                            filled_length = int(bar_length * processed_count / total)
+                            bar = '█' * filled_length + '░' * (bar_length - filled_length)
+                            print(f"\rProgress: [{bar}] {percent}% ({processed_count}/{total})", end='', flush=True)
 
 
-            print(f"Comparison result for '{log_filename}' ({total_added_count} total new warnings across {len(added_warnings)} types) written to '{output_filepath}'.")
+            print(f"\nComparison result for '{log_filename}' ({total_added_count} total new warnings across {len(added_warnings)} types) written to '{output_filepath}'.")
 
         except IOError as e:
             print(f"Error writing output file '{output_filepath}': {e}")
