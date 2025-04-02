@@ -6,6 +6,37 @@ import os
 # Initialize a flag to prevent repeated 'git not found' warnings
 git_blame_not_found = False
 
+def get_actual_case_path(repo_root, rel_path):
+    """
+    Given the repo_root and a relative path, this function returns the actual stored path 
+    using the correct case. On Windows, although the file system is case-insensitive, 
+    Git requires the path's case to match exactly what is stored in the repository.
+    This function recursively traverses each component of the path to correct its case.
+    """
+    components = rel_path.split(os.sep)
+    current_dir = repo_root
+    corrected_components = []
+    for comp in components:
+        try:
+            entries = os.listdir(current_dir)
+        except Exception:
+            corrected_components.append(comp)
+            current_dir = os.path.join(current_dir, comp)
+            continue
+        found = None
+
+        for entry in entries:
+            if entry.lower() == comp.lower():
+                found = entry
+                break
+        if found:
+            corrected_components.append(found)
+            current_dir = os.path.join(current_dir, found)
+        else:
+            corrected_components.append(comp)
+            current_dir = os.path.join(current_dir, comp)
+    return os.path.join(*corrected_components)
+
 def find_git_repo_root():
     """Attempts to find the root directory of the Git repository based on the current working directory."""
     global git_blame_not_found # Allow modification of the global flag
@@ -82,39 +113,26 @@ def get_git_blame_info(filepath, line_no, repo_root=None):
         using_relative_path = False # Flag for debugging output
 
         if repo_root and os.path.isabs(filepath):
-            # Normalize paths for reliable prefix checking (case-insensitive on Windows)
-            # Use realpath to resolve potential symlinks or '..' components first
             try:
                 norm_repo_root = os.path.normcase(os.path.realpath(repo_root))
                 norm_filepath = os.path.normcase(os.path.realpath(filepath))
             except OSError:
-                 # realpath might fail if the path doesn't exist in the expected case
-                 # Fallback to basic normalization
-                 norm_repo_root = os.path.normcase(os.path.normpath(repo_root))
-                 norm_filepath = os.path.normcase(os.path.normpath(filepath))
+                norm_repo_root = os.path.normcase(os.path.normpath(repo_root))
+                norm_filepath = os.path.normcase(os.path.normpath(filepath))
 
-
-            # Check if the real filepath seems to be inside the real repo_root (case-insensitive check)
-            # Ensure we add a separator to avoid matching "/path/to/repo" with "/path/to/repo_extra"
+            # Check if the absolute path is within the repository
             if norm_filepath.startswith(norm_repo_root + os.sep) or norm_filepath == norm_repo_root:
-                 # Now calculate the relative path using original casing (from the input filepath)
                 try:
-                    # Use original filepath and repo_root for relpath to preserve case
                     relative_path = os.path.relpath(filepath, repo_root)
-                    # Git generally prefers forward slashes, convert for robustness
+                    # For Windows, correct the case of the relative path
+                    if os.name == "nt":
+                        relative_path = get_actual_case_path(repo_root, relative_path)
+                    # Git generally recommends using forward slashes
                     path_for_git = relative_path.replace(os.sep, '/')
                     using_relative_path = True
-                    # print(f"Debug: Using relative path for git blame: '{path_for_git}' (CWD='{repo_root}')") # Optional debug
                 except ValueError:
-                    # This might happen on Windows if filepath and repo_root are on different drives.
-                    # Should be rare if startswith passed, but handle defensively.
                     print(f"Warning: Could not determine relative path for '{filepath}' from '{repo_root}' (possibly different drives?). Using original path.", file=sys.stderr)
-                    path_for_git = filepath # Fallback to original absolute path
-            # else:
-                 # Filepath is absolute but not detected within repo_root.
-                 # Keep the original absolute path; let git blame try to handle it.
-                 # print(f"Debug: Absolute path '{filepath}' not detected within repo '{repo_root}'. Using original path.", file=sys.stderr) # Optional debug
-                 # path_for_git remains the original filepath
+                    path_for_git = filepath
 
         elif not os.path.isabs(filepath):
              # Filepath is already relative. Assume it's relative to exec_cwd (which should be repo_root if found).
