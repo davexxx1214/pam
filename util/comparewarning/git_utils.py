@@ -86,6 +86,7 @@ def get_blame_map_for_file(filepath, repo_root=None):
     
     # Check if the file's blame map is already in the global cache
     if filepath in global_blame_cache:
+        print(f"Cache hit: Getting blame info for file '{filepath}' from global cache")
         return global_blame_cache[filepath]
     
     blame_map = {}
@@ -170,29 +171,29 @@ def get_blame_map_for_file(filepath, repo_root=None):
                     # Save current line index for backtracking
                     start_index = line_index
                     
-                    # Look for author and email information
-                    author_found = False
+                    # Look for committer and email information
+                    committer_found = False
                     email_found = False
-                    author_value = "N/A"
+                    committer_value = "N/A"
                     email_value = "N/A"
                     
-                    # First scan through to find author and email info
+                    # First scan through to find committer and email info
                     scan_index = start_index
                     while scan_index < len(lines) and not lines[scan_index].startswith('\t'):
                         current_line_content = lines[scan_index]
                         
-                        if current_line_content.startswith("author "):
-                            author_value = current_line_content[7:].strip()
-                            author_found = True
-                        elif current_line_content.startswith("author-mail "):
-                            email_value = current_line_content[12:].strip().strip('<>')
+                        if current_line_content.startswith("committer "):
+                            committer_value = current_line_content[10:].strip()
+                            committer_found = True
+                        elif current_line_content.startswith("committer-mail "):
+                            email_value = current_line_content[15:].strip().strip('<>')
                             email_found = True
                         
                         scan_index += 1
                     
-                    # Update author and email information
-                    if author_found:
-                        pending_author = author_value
+                    # Update committer and email information
+                    if committer_found:
+                        pending_author = committer_value
                     if email_found:
                         pending_email = email_value
                     
@@ -220,6 +221,7 @@ def get_blame_map_for_file(filepath, repo_root=None):
     
     # Store the blame map in the global cache
     global_blame_cache[filepath] = blame_map
+    print(f"Cache created: Added blame info for file '{filepath}' to global cache, containing {len(blame_map)} lines")
     return blame_map
 
 def get_git_blame_info(filepath, line_no, repo_root=None):

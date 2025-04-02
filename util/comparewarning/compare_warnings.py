@@ -119,22 +119,26 @@ def main():
             with open(output_filepath, "w", newline="", encoding="utf-8") as csvfile:
                 writer = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
                 # Header remains the same conceptually, but the content will be a URL if prefix is set
-                writer.writerow(["Author", "E-Mail", "Commit URL", "Warning keyword", "Message", "Project", "Compiling Source", "File path", "Line", "Column", "Repeat Count"]) # Updated header slightly
+                writer.writerow(["Committer", "E-Mail", "Commit URL", "Warning keyword", "Message", "Project", "Compiling Source", "File path", "Line", "Column", "Repeat Count"]) # Updated header slightly
 
                 if not added_warnings:
                     # Write only header if no new warnings
                     pass
                 else:
                     processed_count = 0
-                    # 创建一个缓存字典，用于存储文件的blame信息
+                    # Create a cache dictionary to store blame information for files
                     blame_cache = {}
+                    print(f"\nStarting to process warnings, creating local blame cache...")
                     
                     # Iterate through the identified new/increased warnings
                     for key, text, extra in added_warnings:
                         filepath, line_no, column, warning_code = key
-                        # 从缓存中获取blame map，如果不存在则加载并缓存
+                        # Get blame map from cache, if not exists then load and cache it
                         if filepath != "N/A" and filepath not in blame_cache:
+                            print(f"Local cache miss: File '{filepath}' not in local cache, calling git_utils to get blame info")
                             blame_cache[filepath] = git_utils.get_blame_map_for_file(filepath, repo_root)
+                        elif filepath != "N/A":
+                            print(f"Local cache hit: Getting blame info for file '{filepath}' from local cache")
                         
                         # Call functions from warning_parser module
                         project = warning_parser.extract_project_path(text)
