@@ -1,7 +1,7 @@
 import subprocess
 import sys
 import re
-import os # os is needed indirectly by print's file=sys.stderr in some envs
+import os 
 
 # Initialize a flag to prevent repeated 'git not found' warnings
 git_blame_not_found = False
@@ -45,7 +45,8 @@ def find_git_repo_root():
 def get_git_blame_info(filepath, line_no, repo_root=None):
     """
     Use git blame to get the author and email information for a specific file and line number.
-    Relies on setting the correct 'cwd' (repo_root) for git blame to handle paths.
+    Relies on setting the correct 'cwd' (repo_root) for git blame to handle paths,
+    and attempts to use relative paths within the repo for better cross-platform/case handling.
     """
     global git_blame_not_found # Access the global flag
 
@@ -66,18 +67,76 @@ def get_git_blame_info(filepath, line_no, repo_root=None):
         if line_num <= 0:
             return "N/A", "N/A"
 
-        # Construct the git blame command - pass the original filepath directly
+        # --- Prepare the path for git blame ---
+        # Default: use the original path passed in. Git might handle absolute paths
+        # correctly sometimes, or this is the fallback if relative path calculation fails.
+        path_for_git = filepath
+        using_relative_path = False # Flag for debugging output
+
+        if repo_root and os.path.isabs(filepath):
+            # Normalize paths for reliable prefix checking (case-insensitive on Windows)
+            # Use realpath to resolve potential symlinks or '..' components first
+            try:
+                norm_repo_root = os.path.normcase(os.path.realpath(repo_root))
+                norm_filepath = os.path.normcase(os.path.realpath(filepath))
+            except OSError:
+                 # realpath might fail if the path doesn't exist in the expected case
+                 # Fallback to basic normalization
+                 norm_repo_root = os.path.normcase(os.path.normpath(repo_root))
+                 norm_filepath = os.path.normcase(os.path.normpath(filepath))
+
+
+            # Check if the real filepath seems to be inside the real repo_root (case-insensitive check)
+            # Ensure we add a separator to avoid matching "/path/to/repo" with "/path/to/repo_extra"
+            if norm_filepath.startswith(norm_repo_root + os.sep) or norm_filepath == norm_repo_root:
+                 # Now calculate the relative path using original casing (from the input filepath)
+                try:
+                    # Use original filepath and repo_root for relpath to preserve case
+                    relative_path = os.path.relpath(filepath, repo_root)
+                    # Git generally prefers forward slashes, convert for robustness
+                    path_for_git = relative_path.replace(os.sep, '/')
+                    using_relative_path = True
+                    # print(f"Debug: Using relative path for git blame: '{path_for_git}' (CWD='{repo_root}')") # Optional debug
+                except ValueError:
+                    # This might happen on Windows if filepath and repo_root are on different drives.
+                    # Should be rare if startswith passed, but handle defensively.
+                    print(f"Warning: Could not determine relative path for '{filepath}' from '{repo_root}' (possibly different drives?). Using original path.", file=sys.stderr)
+                    path_for_git = filepath # Fallback to original absolute path
+            # else:
+                 # Filepath is absolute but not detected within repo_root.
+                 # Keep the original absolute path; let git blame try to handle it.
+                 # print(f"Debug: Absolute path '{filepath}' not detected within repo '{repo_root}'. Using original path.", file=sys.stderr) # Optional debug
+                 # path_for_git remains the original filepath
+
+        elif not os.path.isabs(filepath):
+             # Filepath is already relative. Assume it's relative to exec_cwd (which should be repo_root if found).
+             # Convert slashes for Git.
+             path_for_git = filepath.replace(os.sep, '/')
+             # print(f"Debug: Using provided relative path '{path_for_git}' for git blame. CWD='{exec_cwd}'", file=sys.stderr) # Optional debug
+
+
+        # Construct the git blame command using the determined path
         blame_command = [
             "git", "blame",
             f"-L{line_num},{line_num}",
             "--porcelain",
-            "--", filepath # Pass the original path (often absolute)
+            "--", path_for_git # Use the potentially relative path with forward slashes
         ]
 
         # Execute the git blame command with cwd set
+        # Ensure exec_cwd is repo_root if we intend to use a relative path.
+        # If repo_root wasn't found (exec_cwd is None), using a relative path might fail,
+        # but we proceed anyway as it might be relative to the script's CWD.
+        effective_cwd = exec_cwd # exec_cwd is already repo_root or None
+
+        # Add extra debug info to be used if blame fails
+        cwd_info_on_fail = f"CWD='{effective_cwd}'" if effective_cwd else "CWD=Default (None)"
+        path_info_on_fail = f"GitPath='{path_for_git}' (relative={using_relative_path}, original='{filepath}')"
+
+
         blame_result = subprocess.run(
             blame_command,
-            cwd=exec_cwd, # Set the working directory to repo root
+            cwd=effective_cwd, # Set the working directory to repo root if found
             capture_output=True,
             text=True,
             encoding='utf-8',
@@ -88,10 +147,8 @@ def get_git_blame_info(filepath, line_no, repo_root=None):
 
         # Check if the command executed successfully
         if blame_result.returncode != 0:
-            cwd_info = f"CWD='{exec_cwd}'" if exec_cwd else "CWD=Default (None)"
-            print(f"Warning: git blame failed for '{filepath}' at line {line_no}. {cwd_info}. Error: {blame_result.stderr.strip()}", file=sys.stderr)
-            # If the error is 'no such path', it might still be a case issue not resolved by cwd,
-            # or the file truly isn't tracked at that location in HEAD.
+            # Include more context in the warning message
+            print(f"Warning: git blame failed for line {line_no}. {cwd_info_on_fail}, {path_info_on_fail}. Error: {blame_result.stderr.strip()}", file=sys.stderr)
             return "N/A", "N/A"
 
         # --- Parse the blame output (robust parsing) ---
