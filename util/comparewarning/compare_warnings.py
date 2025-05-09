@@ -133,7 +133,7 @@ def main():
             with open(output_filepath, "w", newline="", encoding="utf-8") as csvfile:
                 writer = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
                 # Header remains the same conceptually, but the content will be a URL if prefix is set
-                writer.writerow(["Committer", "E-Mail", "Commit URL", "Warning keyword", "Message", "Project", "Compiling Source", "File path", "Line", "Column", "Repeat Count"]) # Updated header slightly
+                writer.writerow(["Committer", "E-Mail", "Commit URL", "Warning keyword", "Message", "Project", "File path", "Line", "Column", "Repeat Count"]) # Updated header slightly
 
                 if not added_warnings:
                     # Write only header if no new warnings
@@ -157,7 +157,6 @@ def main():
                         
                         # Call functions from warning_parser module
                         project = warning_parser.extract_project_path(text)
-                        compiling_source = warning_parser.extract_compiling_source(text)
 
                         author = "N/A"
                         email = "N/A"
@@ -181,7 +180,7 @@ def main():
                             commit_display_info = commit_url_prefix + commit_hash
 
                         # Write the row including author, email, and the commit display info
-                        writer.writerow([author, email, commit_display_info, warning_code, text, project, compiling_source, filepath, line_no, column, extra])
+                        writer.writerow([author, email, commit_display_info, warning_code, text, project, filepath, line_no, column, extra])
                         processed_count += 1
                         
                         # Display progress bar

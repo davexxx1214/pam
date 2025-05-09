@@ -5,7 +5,7 @@ def extract_project_path(warning_text):
     """
     Extract project path from the warning text, typically enclosed in square brackets.
     """
-    project_match = re.search(r'\[(.*?)\]', warning_text)
+    project_match = re.search(r'\[([^[\]]*?(?:\.vcxproj|\.csproj|/|\\)[^[\]]*?)\]', warning_text)
     if project_match:
         path = project_match.group(1).strip()
         # Return the path if it contains backslashes, forward slashes, or specific project file extensions.
