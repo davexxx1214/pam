@@ -74,13 +74,14 @@ def parse_warnings(filename):
         # Remove numeric prefix such as "80>" if present at the start
         clean_line = re.sub(r'^\d+>\s*', '', line)
 
-        # If current warning text already contains project path or compiling source, stop accumulation.
+        # If current_warning_text already contains project path or compiling source, finish accumulation before processing the next line
         if current_warning_text is not None:
             if extract_project_path(current_warning_text) != "N/A" or has_compiling_source(current_warning_text):
-                print(f"[LOG] ({filename} line {i+1}) current_warning_text already contains project path or compiling source, end early: {current_warning_text}")
+                print(f"[LOG] ({filename} line {i+1}) current_warning_text already contains project path or compiling source, save and do not append further lines: {current_warning_text}")
                 warnings.append((current_key, current_warning_text.strip()))
                 current_warning_text = None
                 current_key = None
+                # Do not increment i here, reprocess the current line as a possible new warning or skip
                 continue
 
         # Check if the line matches the original warning format.
