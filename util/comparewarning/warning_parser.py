@@ -72,30 +72,44 @@ def parse_warnings(filename):
         # Remove trailing spaces from the original line
         line = lines[i].rstrip(' ')
         # Remove numeric prefix such as "80>" if present at the start
-        clean_line = re.sub(r'^\d+>\s*', '', line)
+        clean_line = re.sub(r'^\\d+>\\s*', '', line)
 
         # Check if the line matches the original warning format.
         original_match = original_pattern.search(clean_line)
         if original_match:
-            # If there's a pending warning, save it first
-            if current_warning_text is not None:
-                print(f"[LOG] ({filename} line {i+1}) new warning starts, save previous: {current_warning_text}")
-                warnings.append((current_key, current_warning_text.strip()))
-            # Extract info and start a new warning context
+            # Extract info for the warning
             filepath = original_match.group("filepath").strip()
             line_no = original_match.group("line").strip()
             column = original_match.group("column").strip()
             warning_code = original_match.group("warning_num").strip()
-            current_key = (filepath, line_no, column, warning_code)
-            current_warning_text = clean_line # Only keep the first line
-            print(f"[LOG] ({filename} line {i+1}) detected new warning: key={current_key}, text={current_warning_text}")
-            warnings.append((current_key, current_warning_text.strip()))
-            current_warning_text = None
-            current_key = None
-            i += 1
+            
+            key_tuple = (filepath, line_no, column, warning_code)
+            # Warning text starts with the current matched line
+            warning_text_for_this_warning = clean_line
+            
+            # Check the *next* line for compiling source information
+            consumed_next_line_for_compiling_source = False
+            if i + 1 < len(lines):
+                next_line_raw = lines[i+1].rstrip(' ')
+                # Clean the next line similarly (remove numeric prefix)
+                next_line_clean_for_compile_source = re.sub(r'^\\d+>\\s*', '', next_line_raw)
+                if has_compiling_source(next_line_clean_for_compile_source):
+                    extracted_source = extract_compiling_source(next_line_clean_for_compile_source)
+                    if extracted_source != "N/A":
+                        # Append the standard compiling source format to the warning text
+                        warning_text_for_this_warning += f" (compiling source file '{extracted_source}')"
+                        print(f"[LOG] ({filename} line {i+2}) Appended compiling source from next line: '{extracted_source}' to warning from line {i+1}")
+                        consumed_next_line_for_compiling_source = True
+            
+            print(f"[LOG] ({filename} line {i+1}) detected new warning: key={key_tuple}, text={warning_text_for_this_warning}")
+            warnings.append((key_tuple, warning_text_for_this_warning.strip()))
+            
+            # Advance index 'i'
+            if consumed_next_line_for_compiling_source:
+                i += 1 # Skip the consumed compiling source line
+            i += 1 # Move past the current warning line
         else:
-            # Not a warning line, just skip
+            # This line is not a new warning start, skip it.
             i += 1
 
-    # No need to append any remaining warning, as all are saved immediately
     return warnings
