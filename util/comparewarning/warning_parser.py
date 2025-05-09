@@ -98,6 +98,12 @@ def parse_warnings(filename):
             current_key = (filepath, line_no, column, warning_code)
             current_warning_text = clean_line # Start accumulating the warning text
             print(f"[LOG] ({filename} line {i+1}) detected new warning: key={current_key}, text={current_warning_text}")
+            # 修正：如果当前行已经包含project path或compiling source，立即保存
+            if extract_project_path(current_warning_text) != "N/A" or has_compiling_source(current_warning_text):
+                print(f"[LOG] ({filename} line {i+1}) new warning line already contains project path or compiling source, save immediately: {current_warning_text}")
+                warnings.append((current_key, current_warning_text.strip()))
+                current_warning_text = None
+                current_key = None
             i += 1
         else:
             # This line is not a new warning start
