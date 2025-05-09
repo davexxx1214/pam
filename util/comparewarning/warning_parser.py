@@ -74,16 +74,6 @@ def parse_warnings(filename):
         # Remove numeric prefix such as "80>" if present at the start
         clean_line = re.sub(r'^\d+>\s*', '', line)
 
-        # If current_warning_text already contains project path or compiling source, finish accumulation before processing the next line
-        if current_warning_text is not None:
-            if extract_project_path(current_warning_text) != "N/A" or has_compiling_source(current_warning_text):
-                print(f"[LOG] ({filename} line {i+1}) current_warning_text already contains project path or compiling source, save and do not append further lines: {current_warning_text}")
-                warnings.append((current_key, current_warning_text.strip()))
-                current_warning_text = None
-                current_key = None
-                # Do not increment i here, reprocess the current line as a possible new warning or skip
-                continue
-
         # Check if the line matches the original warning format.
         original_match = original_pattern.search(clean_line)
         if original_match:
@@ -97,75 +87,15 @@ def parse_warnings(filename):
             column = original_match.group("column").strip()
             warning_code = original_match.group("warning_num").strip()
             current_key = (filepath, line_no, column, warning_code)
-            current_warning_text = clean_line # Start accumulating the warning text
+            current_warning_text = clean_line # Only keep the first line
             print(f"[LOG] ({filename} line {i+1}) detected new warning: key={current_key}, text={current_warning_text}")
-            # 修正：如果当前行已经包含project path或compiling source，立即保存
-            if extract_project_path(current_warning_text) != "N/A" or has_compiling_source(current_warning_text):
-                print(f"[LOG] ({filename} line {i+1}) new warning line already contains project path or compiling source, save immediately: {current_warning_text}")
-                warnings.append((current_key, current_warning_text.strip()))
-                current_warning_text = None
-                current_key = None
+            warnings.append((current_key, current_warning_text.strip()))
+            current_warning_text = None
+            current_key = None
             i += 1
         else:
-            # This line is not a new warning start
-            if current_warning_text is not None:
-                # This line is part of the current multi-line warning
-                # If line is empty, end the current warning.
-                if clean_line.strip() == "":
-                    print(f"[LOG] ({filename} line {i+1}) empty line, end current warning: {current_warning_text}")
-                    warnings.append((current_key, current_warning_text.strip()))
-                    current_warning_text = None
-                    current_key = None
-                    i += 1
-                # If the current line contains a project path, append up to that part and end warning.
-                elif has_project_path(clean_line):
-                    project_path = extract_project_path(clean_line)
-                    project_pattern = r'\\[' + re.escape(project_path) + r'\\]'
-                    match = re.search(project_pattern, clean_line)
-                    print(f"[LOG] ({filename} line {i+1}) detected project path: {project_path}, clean_line: {clean_line}")
-                    if match:
-                        end_pos = match.end()
-                        truncated_line = clean_line[:end_pos]
-                        print(f"[LOG] ({filename} line {i+1}) truncated to project path: {truncated_line}")
-                        current_warning_text += " " + truncated_line.strip() # Add stripped line part
-                    else:
-                        print(f"[LOG] ({filename} line {i+1}) failed to match project path pattern, fallback append whole line: {clean_line}")
-                        current_warning_text += " " + clean_line.strip()
+            # Not a warning line, just skip
+            i += 1
 
-                    # Check if the *next* line contains compiling source info; if so, append it.
-                    if i + 1 < len(lines):
-                         next_line_clean = re.sub(r'^\d+>\s*', '', lines[i + 1].rstrip(' '))
-                         if has_compiling_source(next_line_clean):
-                             print(f"[LOG] ({filename} line {i+2}) next line contains compiling source: {next_line_clean}")
-                             i += 1 # Consume the next line as well
-                             compiling_source = extract_compiling_source(next_line_clean)
-                             current_warning_text += " (compiling source file '" + compiling_source + "')"
-
-                    print(f"[LOG] ({filename} line {i+1}) finally append warning: {current_warning_text}")
-                    warnings.append((current_key, current_warning_text.strip()))
-                    current_warning_text = None
-                    current_key = None
-                    i += 1 # Move past the current line (and possibly the next line if it had compiling info)
-                # If the line looks like a new warning (original format), finish the current one first.
-                elif original_pattern.search(clean_line):
-                    print(f"[LOG] ({filename} line {i+1}) detected new warning format, end current: {current_warning_text}")
-                    warnings.append((current_key, current_warning_text.strip()))
-                    current_warning_text = None
-                    current_key = None
-                    continue # Re-process current line
-                else:
-                    # Append regular continuation lines (stripped) to the current warning.
-                    if clean_line.strip(): # Only append if line is not just whitespace
-                        print(f"[LOG] ({filename} line {i+1}) append multi-line warning content: {clean_line.strip()}")
-                        current_warning_text += " " + clean_line.strip()
-                    i += 1
-            else:
-                # This line is not part of a warning, skip it.
-                i += 1
-
-    # Append any remaining warning accumulated at the end of the file.
-    if current_warning_text is not None:
-        print(f"[LOG] ({filename} end of file) remaining unsaved warning: {current_warning_text}")
-        warnings.append((current_key, current_warning_text.strip()))
-
+    # No need to append any remaining warning, as all are saved immediately
     return warnings
